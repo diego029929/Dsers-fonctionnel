@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: mini-dsers-backend
+    env: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mini-dsers-db
+          property: connectionString
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: MANUFACTURER_API_URL
+        sync: false
+      - key: MANUFACTURER_API_KEY
+        sync: false
+      - key: MANUFACTURER_WEBHOOK_SECRET
+        sync: false
+      - key: PUBLIC_BASE_URL
+        value: https://mini-dsers-backend.onrender.com
+    autoDeploy: true
+
+databases:
+  - name: mini-dsers-db
+    plan: free
+    
