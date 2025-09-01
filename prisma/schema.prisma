@@ -8,53 +8,54 @@ datasource db {
 }
 
 model Product {
-  id           String   @id @default(cuid())
-  sku          String   @unique
+  id           String      @id @default(cuid())
+  sku          String      @unique
   title        String
   description  String?
   imageUrl     String?
   priceCents   Int
-  currency     String   @default("eur")
+  currency     String      @default("eur")
   supplierId   String?
-  supplier     Supplier? @relation(fields: [supplierId], references: [id])
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  supplier     Supplier?   @relation(fields: [supplierId], references: [id])
+  orderItems   OrderItem[] // <-- relation inverse ajoutée
+  active       Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 }
 
 model Supplier {
-  id           String   @id @default(cuid())
-  name         String
-  apiUrl       String
-  apiKey       String
+  id            String    @id @default(cuid())
+  name          String
+  apiUrl        String
+  apiKey        String
   webhookSecret String
-  products     Product[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  products      Product[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
 model Order {
-  id            String   @id @default(cuid())
-  status        OrderStatus @default(PENDING_PAYMENT)
-  email         String
-  currency      String @default("eur")
-  amountCents   Int
-  stripeSessionId String? @unique
-  stripePaymentIntentId String? @unique
-  lineItems     OrderItem[]
-  fulfillmentId String?
-  trackingNumber String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                   String       @id @default(cuid())
+  status               OrderStatus  @default(PENDING_PAYMENT)
+  email                String
+  currency             String       @default("eur")
+  amountCents          Int
+  stripeSessionId      String?      @unique
+  stripePaymentIntentId String?     @unique
+  lineItems            OrderItem[]
+  fulfillmentId        String?
+  trackingNumber       String?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
 }
 
 model OrderItem {
-  id         String  @id @default(cuid())
-  order      Order   @relation(fields: [orderId], references: [id])
-  orderId    String
-  product    Product @relation(fields: [productId], references: [id])
-  productId  String
-  quantity   Int
+  id            String   @id @default(cuid())
+  order         Order    @relation(fields: [orderId], references: [id])
+  orderId       String
+  product       Product  @relation(fields: [productId], references: [id])
+  productId     String
+  quantity      Int
   unitPriceCents Int
 }
 
