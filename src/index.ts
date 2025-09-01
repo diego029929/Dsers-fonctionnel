@@ -35,7 +35,7 @@ app.get("/products", async (_, res) => {
   res.json(products);
 });
 
-// Checkout session (Stripe)
+// Checkout session (Stripe Checkout)
 app.post("/checkout", async (req, res) => {
   try {
     const { email, items, shippingAddress } = req.body;
@@ -82,7 +82,7 @@ app.post("/checkout", async (req, res) => {
       },
     });
 
-    // Stripe session
+    // Stripe checkout session
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       customer_email: email,
@@ -102,6 +102,28 @@ app.post("/checkout", async (req, res) => {
   } catch (err) {
     logger.error(err);
     res.status(500).json({ error: "Failed to create checkout" });
+  }
+});
+
+// PaymentIntent (Stripe Elements)
+app.post("/create-payment-intent", async (req, res) => {
+  try {
+    const { amount } = req.body;
+
+    if (!amount) {
+      return res.status(400).json({ error: "Amount is required" });
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount,
+      currency: "eur",
+      automatic_payment_methods: { enabled: true },
+    });
+
+    res.json({ clientSecret: paymentIntent.client_secret });
+  } catch (err: any) {
+    logger.error("Failed to create payment intent", err.message);
+    res.status(500).json({ error: "Failed to create payment intent" });
   }
 });
 
@@ -240,4 +262,4 @@ app.get("/orders/:id", async (req, res) => {
 app.listen(PORT, () => {
   logger.info(`🚀 Server running at http://localhost:${PORT}`);
 });
-  
+      
