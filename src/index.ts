@@ -6,16 +6,23 @@ import bodyParser from "body-parser";
 
 import { prisma } from "./lib/prisma.js";
 import { logger, httpLogger } from "./lib/logger.js";
-import { sendOrderToManufacturer, verifyManufacturerSignature } from "./lib/manufacturer.js";
+import {
+  sendOrderToManufacturer,
+  verifyManufacturerSignature,
+} from "./lib/manufacturer.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
+const PUBLIC_BASE_URL =
+  process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
 
 // --- Middlewares globaux ---
-app.use(cors({
-  origin: "https://diego029929.github.io" // autorise ton frontend
-}));
+app.use(
+  cors({
+    origin: "https://diego029929.github.io",
+    methods: ["GET", "POST", "OPTIONS"],
+  })
+);
 app.use(helmet());
 app.use(httpLogger);
 app.use(express.json());
@@ -35,19 +42,50 @@ app.get("/products", async (_, res) => {
   res.json(products);
 });
 
-// ⚡️ Route test backend pour le frontend
-app.get("/test-backend", (_, res) => {
-  res.json({ message: "Successful" });
-});
+// ⚡️ Checkout simulé
+app.post("/checkout", async (req, res) => {
+  try {
+    const { email, items } = req.body;
 
-// ⚡️ Route panier simulé (test frontend)
-app.get("/cart", (_, res) => {
-  res.json({
-    items: [
-      { id: 1, name: "Produit test 1", price: 10 },
-      { id: 2, name: "Produit test 2", price: 20 },
-    ]
-  });
+    if (!items || items.length === 0) {
+      return res.status(400).json({ error: "No items in checkout" });
+    }
+
+    // 📦 Crée une commande dans la BDD
+    const dbItems = await prisma.product.findMany({
+      where: { id: { in: items.map((i: any) => i.productId) } },
+    });
+
+    let amountCents = 0;
+
+    for (const i of items) {
+      const product = dbItems.find((p) => p.id === i.productId);
+      if (!product) continue;
+      amountCents += product.priceCents * i.quantity;
+    }
+
+    const order = await prisma.order.create({
+      data: {
+        email,
+        amountCents,
+        currency: "eur",
+        status: "PAID", // Marqué payé directement pour simulation
+        lineItems: {
+          create: items.map((i: any) => ({
+            productId: i.productId,
+            quantity: i.quantity,
+            unitPriceCents:
+              dbItems.find((p) => p.id === i.productId)?.priceCents || 0,
+          })),
+        },
+      },
+    });
+
+    res.json({ message: "successful", orderId: order.id });
+  } catch (err) {
+    logger.error("Erreur création checkout :", err);
+    res.status(500).json({ error: "Échec création de la commande" });
+  }
 });
 
 // ✅ Webhook du fabricant
