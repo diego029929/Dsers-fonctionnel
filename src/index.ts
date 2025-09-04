@@ -6,30 +6,19 @@ import bodyParser from "body-parser";
 
 import { prisma } from "./lib/prisma.js";
 import { logger, httpLogger } from "./lib/logger.js";
-import { stripe } from "./lib/stripe.js";
-import {
-  sendOrderToManufacturer,
-  verifyManufacturerSignature,
-} from "./lib/manufacturer.js";
+import { sendOrderToManufacturer, verifyManufacturerSignature } from "./lib/manufacturer.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const PUBLIC_BASE_URL =
-  process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
 
 // --- Middlewares globaux ---
-app.use(cors());
+app.use(cors({
+  origin: "https://diego029929.github.io" // autorise ton frontend
+}));
 app.use(helmet());
 app.use(httpLogger);
-
-// ⚠️ Stripe webhook = raw body, sinon JSON
-app.use((req, res, next) => {
-  if (req.originalUrl === "/webhooks/stripe") {
-    next();
-  } else {
-    express.json()(req, res, next);
-  }
-});
+app.use(express.json());
 
 // --- Routes ---
 
@@ -46,199 +35,20 @@ app.get("/products", async (_, res) => {
   res.json(products);
 });
 
-// ✅ Create Stripe Checkout Session
-app.post("/checkout", async (req, res) => {
-  try {
-    const { email, items } = req.body;
-
-    if (!items || items.length === 0) {
-      return res.status(400).json({ error: "No items in checkout" });
-    }
-
-    // Vérifie les produits envoyés depuis le front
-    const dbItems = await prisma.product.findMany({
-      where: { id: { in: items.map((i: any) => i.productId) } },
-    });
-
-    let amountCents = 0;
-    const lineItems: any[] = [];
-
-    for (const i of items) {
-      const product = dbItems.find((p) => p.id === i.productId);
-      if (!product) continue;
-
-      amountCents += product.priceCents * i.quantity;
-
-      lineItems.push({
-        price_data: {
-          currency: product.currency,
-          product_data: { name: product.title },
-          unit_amount: product.priceCents,
-        },
-        quantity: i.quantity,
-      });
-    }
-
-    // 📦 Crée une commande dans la BDD
-    const order = await prisma.order.create({
-      data: {
-        email,
-        amountCents,
-        currency: "eur",
-        lineItems: {
-          create: items.map((i: any) => ({
-            productId: i.productId,
-            quantity: i.quantity,
-            unitPriceCents:
-              dbItems.find((p) => p.id === i.productId)?.priceCents || 0,
-          })),
-        },
-      },
-    });
-
-    // 💳 Crée une session Stripe Checkout
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      customer_email: email,
-      line_items: lineItems,
-      mode: "payment",
-      success_url: `https://diego029929.github.io/DIVN/success.html?orderId=${order.id}`,
-      cancel_url: `https://diego029929.github.io/Carhatt/cancel.html?orderId=${order.id}`,
-      metadata: { orderId: order.id },
-    });
-
-    // 🔄 Met à jour la commande avec l’ID de session Stripe
-    await prisma.order.update({
-      where: { id: order.id },
-      data: { stripeSessionId: session.id },
-    });
-
-    res.json({ id: session.id, url: session.url });
-  } catch (err) {
-    logger.error("Erreur création checkout :", err);
-    res.status(500).json({ error: "Échec création de la session de paiement" });
-  }
+// ⚡️ Route test backend pour le frontend
+app.get("/test-backend", (_, res) => {
+  res.json({ message: "Successful" });
 });
 
-// ⚡️ Route de test Stripe Checkout (indépendante de la BDD)
-app.post("/test-checkout", async (req, res) => {
-  try {
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      line_items: [
-        {
-          price_data: {
-            currency: "eur",
-            product_data: { name: "Produit test" },
-            unit_amount: 1000, // 10,00 €
-          },
-          quantity: 1,
-        },
-      ],
-      mode: "payment",
-      success_url: "https://google.com",
-cancel_url: "https://safari.en.download.it/downloading",
-    });
-
-    res.json({ id: session.id, url: session.url });
-  } catch (err: any) {
-    console.error("Stripe error:", err);
-    res.status(500).json({ error: err.message });
-  }
+// ⚡️ Route panier simulé (test frontend)
+app.get("/cart", (_, res) => {
+  res.json({
+    items: [
+      { id: 1, name: "Produit test 1", price: 10 },
+      { id: 2, name: "Produit test 2", price: 20 },
+    ]
+  });
 });
-
-// ✅ Webhook Stripe
-app.post(
-  "/webhooks/stripe",
-  bodyParser.raw({ type: "application/json" }),
-  async (req, res) => {
-    const sig = req.headers["stripe-signature"];
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-    if (!webhookSecret) return res.status(500).send("Stripe webhook secret not set");
-
-    let event;
-
-    try {
-      event = stripe.webhooks.constructEvent(req.body, sig!, webhookSecret);
-    } catch (err: any) {
-      logger.error("⚠️ Signature Stripe invalide :", err.message);
-      return res.status(400).send(`Webhook Error: ${err.message}`);
-    }
-
-    try {
-      const session = event.data.object as any;
-
-      if (event.type === "checkout.session.completed") {
-        const orderId = session.metadata?.orderId;
-
-        if (orderId) {
-          await prisma.order.update({
-            where: { id: orderId },
-            data: {
-              status: "PAID",
-              stripePaymentIntentId: session.payment_intent,
-            },
-          });
-
-          const order = await prisma.order.findUnique({
-            where: { id: orderId },
-            include: { lineItems: { include: { product: true } } },
-          });
-
-          if (order) {
-            const payload = {
-              orderId: order.id,
-              email: order.email,
-              items: order.lineItems.map((li) => ({
-                sku: li.product.sku,
-                quantity: li.quantity,
-              })),
-              shippingAddress: session.shipping_details?.address
-                ? {
-                    name: session.customer_details?.name || "",
-                    address1: session.shipping_details.address.line1,
-                    address2: session.shipping_details.address.line2,
-                    city: session.shipping_details.address.city,
-                    postalCode: session.shipping_details.address.postal_code,
-                    country: session.shipping_details.address.country,
-                  }
-                : {
-                    name: "",
-                    address1: "",
-                    city: "",
-                    postalCode: "",
-                    country: "",
-                  },
-              notifyUrl: `${PUBLIC_BASE_URL}/webhooks/manufacturer`,
-            };
-
-            const manufacturer = await sendOrderToManufacturer(payload);
-
-            await prisma.order.update({
-              where: { id: order.id },
-              data: {
-                status: "SENT_TO_SUPPLIER",
-                fulfillmentId: manufacturer.fulfillmentId,
-              },
-            });
-          }
-        }
-      }
-
-      await prisma.paymentEvent.create({
-        data: {
-          type: event.type,
-          raw: event as any,
-          orderId: (event.data.object as any).metadata?.orderId,
-        },
-      });
-    } catch (err) {
-      logger.error("Erreur traitement webhook Stripe :", err);
-    }
-
-    res.json({ received: true });
-  }
-);
 
 // ✅ Webhook du fabricant
 app.post(
@@ -286,4 +96,4 @@ app.get("/orders/:id", async (req, res) => {
 app.listen(PORT, () => {
   logger.info(`✅ Serveur lancé sur http://localhost:${PORT}`);
 });
-                                   
+        
