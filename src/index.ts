@@ -14,14 +14,15 @@ import {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
+const PUBLIC_BASE_URL =
+  process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
 
 // --- Middlewares globaux ---
 app.use(cors());
 app.use(helmet());
 app.use(httpLogger);
 
-// ⚠️ On met JSON parser par défaut, mais pas pour Stripe webhook
+// ⚠️ Stripe webhook = raw body, sinon JSON
 app.use((req, res, next) => {
   if (req.originalUrl === "/webhooks/stripe") {
     next();
@@ -54,6 +55,7 @@ app.post("/checkout", async (req, res) => {
       return res.status(400).json({ error: "No items in checkout" });
     }
 
+    // Vérifie les produits envoyés depuis le front
     const dbItems = await prisma.product.findMany({
       where: { id: { in: items.map((i: any) => i.productId) } },
     });
@@ -94,16 +96,16 @@ app.post("/checkout", async (req, res) => {
       },
     });
 
-// 💳 Crée une session Stripe Checkout
-const session = await stripe.checkout.sessions.create({
-  payment_method_types: ["card"],
-  customer_email: email,
-  line_items: lineItems,
-  mode: "payment",
-  success_url: `https://diego029929.github.io/DIVN/success.html?orderId=${order.id}`,
-  cancel_url: `https://diego029929.github.io/Carhatt/cancel.html?orderId=${order.id}`,
-  metadata: { orderId: order.id },
-});
+    // 💳 Crée une session Stripe Checkout
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      customer_email: email,
+      line_items: lineItems,
+      mode: "payment",
+      success_url: `https://diego029929.github.io/DIVN/success.html?orderId=${order.id}`,
+      cancel_url: `https://diego029929.github.io/Carhatt/cancel.html?orderId=${order.id}`,
+      metadata: { orderId: order.id },
+    });
 
     // 🔄 Met à jour la commande avec l’ID de session Stripe
     await prisma.order.update({
@@ -118,7 +120,7 @@ const session = await stripe.checkout.sessions.create({
   }
 });
 
-// ✅ Webhook Stripe : écoute les événements de paiement
+// ✅ Webhook Stripe
 app.post(
   "/webhooks/stripe",
   bodyParser.raw({ type: "application/json" }),
@@ -211,7 +213,7 @@ app.post(
   }
 );
 
-// ✅ Webhook du fabricant (mise à jour de la livraison)
+// ✅ Webhook du fabricant
 app.post(
   "/webhooks/manufacturer",
   bodyParser.raw({ type: "application/json" }),
@@ -257,3 +259,4 @@ app.get("/orders/:id", async (req, res) => {
 app.listen(PORT, () => {
   logger.info(`✅ Serveur lancé sur http://localhost:${PORT}`);
 });
+  
