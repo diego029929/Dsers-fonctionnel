@@ -94,16 +94,16 @@ app.post("/checkout", async (req, res) => {
       },
     });
 
-    // 💳 Crée une session Stripe Checkout
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      customer_email: email,
-      line_items: lineItems,
-      mode: "payment",
-      success_url: `${https://diego029929.github.io/DIVN/}/success.html?orderId=${order.id}`,
-      cancel_url: `${PUBLIC_BASE_URL}/cancel.html?orderId=${order.id}`,
-      metadata: { orderId: order.id },
-    });
+// 💳 Crée une session Stripe Checkout
+const session = await stripe.checkout.sessions.create({
+  payment_method_types: ["card"],
+  customer_email: email,
+  line_items: lineItems,
+  mode: "payment",
+  success_url: `https://diego029929.github.io/DIVN/success.html?orderId=${order.id}`,
+  cancel_url: `https://diego029929.github.io/Carhatt/cancel.html?orderId=${order.id}`,
+  metadata: { orderId: order.id },
+});
 
     // 🔄 Met à jour la commande avec l’ID de session Stripe
     await prisma.order.update({
