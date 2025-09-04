@@ -100,7 +100,7 @@ app.post("/checkout", async (req, res) => {
       customer_email: email,
       line_items: lineItems,
       mode: "payment",
-      success_url: `${PUBLIC_BASE_URL}/success.html?orderId=${order.id}`,
+      success_url: `${https://diego029929.github.io/DIVN/}/success.html?orderId=${order.id}`,
       cancel_url: `${PUBLIC_BASE_URL}/cancel.html?orderId=${order.id}`,
       metadata: { orderId: order.id },
     });
