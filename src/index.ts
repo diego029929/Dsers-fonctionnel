@@ -136,8 +136,8 @@ app.post("/test-checkout", async (req, res) => {
         },
       ],
       mode: "payment",
-      success_url: "https://example.com/success",
-      cancel_url: "https://example.com/cancel",
+      success_url: "https://google.com",
+cancel_url: "https://safari.en.download.it/downloading",
     });
 
     res.json({ id: session.id, url: session.url });
